@@ -4,12 +4,12 @@ import logging
 from typing import Any, Dict, Optional, Tuple, List
 from urllib.parse import quote
 
-import yaml
 import lark_oapi as lark
 from lark_oapi.api.sheets.v3 import (
 	QuerySpreadsheetSheetRequest,
 	QuerySpreadsheetSheetResponse,
 )
+from app.core.config import settings
 
 
 class FeishuClient:
@@ -52,32 +52,19 @@ class FeishuClient:
 		app_secret: Optional[str],
 		config_path: Optional[str],
 	) -> Tuple[str, str]:
+		# 1) Explicit params
 		if app_id and app_secret:
 			return app_id, app_secret
-		env_app_id = os.getenv("FEISHU_APP_ID")
-		env_app_secret = os.getenv("FEISHU_APP_SECRET")
+		# 2) From FastAPI settings (recommended)
+		if settings.feishu_app_id and settings.feishu_app_secret:
+			return settings.feishu_app_id, settings.feishu_app_secret
+		# 3) Fallback to raw environment variables (compat)
+		env_app_id = os.getenv("FEISHU_APP_ID") or os.getenv("XPJ_FEISHU_APP_ID")
+		env_app_secret = os.getenv("FEISHU_APP_SECRET") or os.getenv("XPJ_FEISHU_APP_SECRET")
 		if env_app_id and env_app_secret:
 			return env_app_id, env_app_secret
-		# 尝试配置文件
-		paths: List[str] = []
-		if config_path:
-			paths.append(os.path.abspath(config_path))
-		paths.extend(self._default_config_candidates())
-		for p in paths:
-			try:
-				if not os.path.isfile(p):
-					continue
-				with open(p, "r", encoding="utf-8") as f:
-					data = yaml.safe_load(f) or {}
-				auth = data.get("auth", {}) or {}
-				fid = auth.get("app_id")
-				fsecret = auth.get("app_secret")
-				if fid and fsecret:
-					return fid, fsecret
-			except Exception:
-				pass
 		raise ValueError(
-			"Feishu credentials not found. Set FEISHU_APP_ID/FEISHU_APP_SECRET or provide in app/configs/xpj.feishu.yaml under auth.app_id/auth.app_secret"
+			"Feishu credentials not found. Configure XPJ_FEISHU_APP_ID/XPJ_FEISHU_APP_SECRET (or FEISHU_*), or pass app_id/app_secret explicitly."
 		)
 
 	# ---------- Drive v1：列出指定文件夹下的文件（单页） ----------
