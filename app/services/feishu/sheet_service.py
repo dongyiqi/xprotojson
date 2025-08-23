@@ -64,6 +64,9 @@ class SheetService(BaseService):
         loop = asyncio.get_event_loop()
         
         try:
+            # 添加调试信息：记录请求参数
+            self.log_debug(f"调用飞书 API 参数: spreadsheet_token={spreadsheet_token}, range_str={range_str}, value_render_option={value_render_option}, date_time_render_option={date_time_render_option}")
+            
             # 调用飞书客户端获取数据
             values = await loop.run_in_executor(
                 None,
@@ -73,6 +76,9 @@ class SheetService(BaseService):
                 value_render_option,
                 date_time_render_option
             )
+            
+            # 添加调试信息：记录返回数据的基本信息
+            self.log_debug(f"飞书 API 返回数据: 行数={len(values) if values else 0}, 第一行列数={len(values[0]) if values and len(values) > 0 else 0}")
             
             # 构造响应格式
             # 注意：read_range_values 只返回 values，我们需要构造完整响应
@@ -90,9 +96,32 @@ class SheetService(BaseService):
             self.record_metric("rows_fetched", len(values))
             self.record_metric("cols_fetched", max(len(row) for row in values) if values else 0)
             
+            self.log_info(f"成功获取表格数据: 行数={len(values)}, 最大列数={max(len(row) for row in values) if values else 0}")
+            
             return response
             
         except Exception as e:
+            # 添加详细的错误调试信息
+            self.log_error(f"获取表格数据失败: token={spreadsheet_token}, range={range_str}, 错误类型={type(e).__name__}, 错误信息={str(e)}")
+            
+            # 如果是飞书 API 错误 90215 (not found sheetId)，提供更详细的调试信息
+            if "90215" in str(e) or "not found sheetId" in str(e):
+                self.log_error(f"飞书 API 错误 90215 - Sheet ID 未找到。可能原因:")
+                self.log_error(f"1. range_str 格式问题: {range_str}")
+                self.log_error(f"2. Sheet 名称或 ID 不存在")
+                self.log_error(f"3. 权限不足或 token 无效")
+                
+                # 尝试解析 range_str 中的 sheet 部分
+                if "!" in range_str:
+                    sheet_part = range_str.split("!")[0]
+                    self.log_error(f"解析的 Sheet 标识符: '{sheet_part}'")
+                    
+                    # 检查是否包含特殊字符或格式问题
+                    if sheet_part.startswith("'") and sheet_part.endswith("'"):
+                        self.log_error(f"使用了单引号包围的 Sheet 名称: {sheet_part}")
+                    elif sheet_part.isdigit() or (len(sheet_part) > 5 and not sheet_part.startswith("Sheet")):
+                        self.log_error(f"疑似使用了 Sheet ID 而非名称: {sheet_part}")
+            
             self._handle_api_error(e)
     
     async def get_sheet_meta(
@@ -149,15 +178,29 @@ class SheetService(BaseService):
             else:
                 target_sheet = sheets[0]
             
-            # 构造 SheetMeta
+            # 解析 grid_properties 以获取行列数（兼容 attr/dict）
+            gp = getattr(target_sheet, "grid_properties", None)
+            if gp is None and isinstance(target_sheet, dict):
+                gp = target_sheet.get("grid_properties")
+            rows = 0
+            cols = 0
+            if gp is not None:
+                rows = getattr(gp, "row_count", None)
+                cols = getattr(gp, "column_count", None)
+                if rows is None and isinstance(gp, dict):
+                    rows = gp.get("row_count", 0)
+                if cols is None and isinstance(gp, dict):
+                    cols = gp.get("column_count", 0)
+            
+            # 构造 SheetMeta（v3 响应无 revision 字段，置 0）
             return SheetMeta(
-                sheet_id=target_sheet.sheet_id,
-                sheet_name=target_sheet.title,
-                revision=response.data.revision if response.data else 0,
+                sheet_id=getattr(target_sheet, "sheet_id", ""),
+                sheet_name=getattr(target_sheet, "title", ""),
+                revision=0,
                 last_modified=datetime.now(),  # 飞书 API 可能不返回修改时间
                 dimensions={
-                    "rows": target_sheet.row_count,
-                    "cols": target_sheet.column_count
+                    "rows": rows or 0,
+                    "cols": cols or 0
                 }
             )
             

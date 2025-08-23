@@ -16,6 +16,10 @@ class CacheKeys:
     MERGED_DATA = "{prefix}:sheet:merged:{group_name}:{range_hash}"
     FOLDER_FILES = "{prefix}:folder:files:{folder_token}"
     SHEET_META = "{prefix}:sheet:meta:{sheet_token}"
+    SHEET_SCHEMA = "{prefix}:sheet:schema:{sheet_token}:{sheet_name}"
+    SHEET_SCHEMA_BY_NAME = "{prefix}:sheet:schema:{sheet_name}"
+    SHEET_ROW = "{prefix}:sheet:row:{sheet_token}:{sheet_name}:{row_key}"
+    ROW_CFGID = "{prefix}:cfgid:{row_key}"
     
     @classmethod
     def structured_key(
@@ -80,6 +84,41 @@ class CacheKeys:
         return cls.SHEET_META.format(
             prefix=cls.PREFIX,
             sheet_token=sheet_token
+        )
+    
+    @classmethod
+    def sheet_schema_key(cls, sheet_token: str, sheet_name: str) -> str:
+        """生成表格 schema 的缓存键"""
+        return cls.SHEET_SCHEMA.format(
+            prefix=cls.PREFIX,
+            sheet_token=sheet_token,
+            sheet_name=sheet_name
+        )
+    
+    @classmethod
+    def sheet_row_key(cls, sheet_token: str, sheet_name: str, row_key: str) -> str:
+        """生成单行数据缓存键"""
+        return cls.SHEET_ROW.format(
+            prefix=cls.PREFIX,
+            sheet_token=sheet_token,
+            sheet_name=sheet_name,
+            row_key=row_key
+        )
+
+    @classmethod
+    def row_cfgid_key(cls, row_key: str) -> str:
+        """生成基于全局唯一 cfgid 的行键"""
+        return cls.ROW_CFGID.format(
+            prefix=cls.PREFIX,
+            row_key=row_key
+        )
+
+    @classmethod
+    def sheet_schema_by_name_key(cls, sheet_name: str) -> str:
+        """仅基于 sheet 名称的 schema 键（便于跨 workbook 复用/合并）"""
+        return cls.SHEET_SCHEMA_BY_NAME.format(
+            prefix=cls.PREFIX,
+            sheet_name=sheet_name
         )
     
     @staticmethod

@@ -10,6 +10,7 @@ from app.services.transform import SheetTransformer
 from app.services.merge import SheetMerger
 from app.services.structured_service import StructuredSheetService
 from app.clients.feishu import FeishuClient
+from app.services.sheet_sync_service import SheetSyncService
 
 
 # 全局服务实例
@@ -18,6 +19,7 @@ _redis_service = None
 _transformer = None
 _merger = None
 _structured_service = None
+_sheet_sync_service = None
 
 
 def get_feishu_client(request: Request) -> FeishuClient:
@@ -93,6 +95,22 @@ def get_structured_service(
     return _structured_service
 
 
+def get_sheet_sync_service(
+    sheet_service: Annotated[SheetService, Depends(get_sheet_service)],
+    redis_service: Annotated[RedisService, Depends(get_redis_service)],
+    transformer: Annotated[SheetTransformer, Depends(get_transformer)],
+) -> SheetSyncService:
+    """获取 Sheet 同步服务"""
+    global _sheet_sync_service
+    if _sheet_sync_service is None:
+        _sheet_sync_service = SheetSyncService(
+            sheet_service=sheet_service,
+            redis_service=redis_service,
+            transformer=transformer,
+        )
+    return _sheet_sync_service
+
+
 # 类型别名，方便在端点中使用
 FeishuClientDep = Annotated[FeishuClient, Depends(get_feishu_client)]
 ConfigManagerDep = Annotated[ConfigManager, Depends(get_config_manager)]
@@ -102,3 +120,4 @@ SheetMergerDep = Annotated[SheetMerger, Depends(get_merger)]
 DriveServiceDep = Annotated[DriveService, Depends(get_drive_service)]
 SheetServiceDep = Annotated[SheetService, Depends(get_sheet_service)]
 StructuredServiceDep = Annotated[StructuredSheetService, Depends(get_structured_service)]
+SheetSyncServiceDep = Annotated[SheetSyncService, Depends(get_sheet_sync_service)]

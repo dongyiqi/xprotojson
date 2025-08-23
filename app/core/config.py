@@ -77,6 +77,13 @@ class TableConfig(BaseModel):
 	header_map: Dict[str, str] = Field(
 		default_factory=dict, description="字段到列名的映射，可选"
 	)
+	# 0-based 行索引配置
+	index_row: int = Field(default=0, ge=0, description="索引行（通常为自增序号）")
+	header_name_row: int = Field(default=1, ge=0, description="列名所在行（用作 JSON 属性名）")
+	type_row: int = Field(default=2, ge=0, description="类型所在行（int/float/bool/str/array/json）")
+	comment_row: int = Field(default=3, ge=0, description="备注所在行（可选，不参与解析）")
+	data_start_row: int = Field(default=4, ge=0, description="数据开始行（0-based）")
+	default_key_column: str = Field(default="ID", description="默认主键列名")
 
 	@field_validator("headers", mode="before")
 	@classmethod

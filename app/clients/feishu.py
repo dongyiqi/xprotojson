@@ -98,6 +98,25 @@ class FeishuClient:
 			pass
 		return response
 
+	# ---------- Drive v1：获取单个文件信息（含创建/修改时间） ----------
+	def get_drive_file(self, file_token: str) -> Dict[str, Any]:
+		try:
+			from lark_oapi.api.drive.v1 import GetFileRequest, GetFileResponse
+		except ModuleNotFoundError as e:
+			raise NotImplementedError(
+				"当前 lark-oapi 版本未提供 drive.v1 file.get API。请升级到 >=1.4.15。"
+			) from e
+
+		request = GetFileRequest.builder().file_token(file_token).build()
+		response: GetFileResponse = self.client.drive.v1.file.get(request)
+		if not response.success():
+			self._logger.error(
+				f"client.drive.v1.file.get failed, code: {response.code}, msg: {response.msg}, "
+				f"log_id: {response.get_log_id()}, resp: \n{json.dumps(json.loads(response.raw.content), indent=4, ensure_ascii=False)}"
+			)
+			raise RuntimeError(f"Drive get failed: {response.code} {response.msg}")
+		return response.data if response.data is not None else {}
+
 	# ---------- Sheets v2：读取指定范围的值（使用 lark 原生 BaseRequest 调用） ----------
 	def read_range_values(
 		self,
@@ -109,6 +128,8 @@ class FeishuClient:
 		# URL 中的 range 需要进行 path 安全编码，但保留 '!' 和 ':'
 		encoded_range = quote(range_a1, safe="!:")
 		uri = f"/open-apis/sheets/v2/spreadsheets/{spreadsheet_token}/values/{encoded_range}"
+
+		self._logger.debug(f"准备读取表格范围数据: spreadsheet_token={spreadsheet_token}, range={range_a1}, encoded_range={encoded_range}")
 
 		request = (
 			lark.BaseRequest.builder()
@@ -123,20 +144,30 @@ class FeishuClient:
 		)
 
 		response: lark.BaseResponse = self.client.request(request)
+		
+		self._logger.debug(f"飞书 API 响应: code={response.code}, success={response.success()}, log_id={response.get_log_id()}")
+		
 		if not response.success():
+			self._logger.error(
+				f"飞书 API 错误: {response.code} - valueRange get failed: code={response.code}, msg={response.msg}, log_id={response.get_log_id()}"
+			)
 			raise RuntimeError(
 				f"valueRange get failed: code={response.code}, msg={response.msg}, log_id={response.get_log_id()}"
 			)
 
 		try:
 			body = json.loads(response.raw.content.decode("utf-8"))
+			self._logger.debug(f"解析响应体成功，数据结构: {json.dumps(body, indent=2, ensure_ascii=False)}")
 		except Exception as ex:
+			self._logger.error(f"解析响应体失败: {ex}, 原始内容: {response.raw.content}")
 			raise RuntimeError(f"invalid json body: {ex}")
 
 		values = (
 			(body or {}).get("data", {}).get("valueRange", {}).get("values", [])
 			or []
 		)
+		
+		self._logger.debug(f"成功获取表格数据，行数: {len(values)}")
 		return values
 
 
