@@ -1,15 +1,12 @@
 """
-依赖注入模块 - 提供各种服务依赖
+⚠️  DEPRECATED - 此文件已废弃
+所有依赖注入现已统一到 app.services.dependencies 模块
+
+请使用:
+    from app.services.dependencies import FeishuClientDep, ConfigManagerDep, ...
 """
-from typing import Annotated
-from fastapi import Depends, Request
-from app.clients.feishu import FeishuClient
 
+# 为了向后兼容，临时保留以下导入，建议尽快迁移
+# from app.services.dependencies import FeishuClientDep
 
-def get_feishu_client(request: Request) -> FeishuClient:
-	"""获取全局 feishu client"""
-	return request.app.state.feishu
-
-
-# 类型别名，方便在端点中使用
-FeishuClientDep = Annotated[FeishuClient, Depends(get_feishu_client)]
+# __all__ = ["FeishuClientDep"]

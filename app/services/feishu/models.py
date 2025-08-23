@@ -13,19 +13,89 @@ class FileInfo:
     name: str  # 文件名
     type: str  # 文件类型 (sheet, doc, folder 等)
     parent_token: str  # 父文件夹 token
-    created_time: datetime  # 创建时间
-    modified_time: datetime  # 修改时间
+    created_time: int  # 创建时间（与飞书 API 一致，数字时间戳）
+    modified_time: int  # 修改时间（与飞书 API 一致，数字时间戳）
     
     @classmethod
-    def from_api_response(cls, data: Dict[str, Any]) -> 'FileInfo':
-        """从飞书 API 响应创建实例"""
+    def from_api_response(cls, data: Any) -> 'FileInfo':
+        """从飞书 Drive 文件列表 API 的字典创建实例（按标准结构）。
+
+        仅针对飞书 `file.list` 返回的数据结构取值：
+        - token
+        - name
+        - type
+        - parent_token
+        - created_time（字符串/数字时间戳：秒或毫秒）
+        - modified_time（字符串/数字时间戳：秒或毫秒）
+        - 若为 `shortcut`，将解析 `shortcut_info` 并用目标 token 替换，按 token 前缀推断目标类型
+        """
+        def _g(obj: Any, key: str) -> Optional[Any]:
+            if isinstance(obj, dict):
+                return obj.get(key)
+            return getattr(obj, key, None)
+
+        def _parse_num_ts(v: Any) -> int:
+            """解析时间戳为整数（不做单位转换，保持与原始数据一致）。"""
+            if v is None:
+                return 0
+            if isinstance(v, bool):
+                return 0
+            if isinstance(v, (int, float)):
+                try:
+                    return int(v)
+                except Exception:
+                    return 0
+            if isinstance(v, str):
+                s = v.strip()
+                try:
+                    # 直接按数字字符串解析
+                    return int(float(s))
+                except Exception:
+                    return 0
+            return 0
+
+        token = _g(data, "token") or ""
+        name = _g(data, "name") or ""
+        parent_token = _g(data, "parent_token") or ""
+
+        file_type = _g(data, "type")
+        file_type = (file_type or "").lower()
+
+        created_raw = _g(data, "created_time")
+        modified_raw = _g(data, "modified_time")
+
+        # 处理快捷方式：用目标 token 替换，并尽量推断目标类型
+        if file_type == "shortcut":
+            si = _g(data, "shortcut_info")
+            target_token = None
+            target_type = None
+            if isinstance(si, dict):
+                target_token = si.get("target_token")
+                target_type = si.get("target_type")
+            elif si is not None:
+                target_token = getattr(si, "target_token", None)
+                target_type = getattr(si, "target_type", None)
+
+            if isinstance(target_token, str) and target_token:
+                token = target_token
+                # 根据 token 前缀推断类型（无需 service 层再处理）
+                lt = token.lower()
+                if lt.startswith("sht"):
+                    file_type = "sheet"
+                elif lt.startswith("dox"):
+                    file_type = "docx"
+                elif lt.startswith("box"):
+                    file_type = "file"
+                elif isinstance(target_type, str) and target_type:
+                    file_type = target_type.lower()
+
         return cls(
-            token=data.get("token", ""),
-            name=data.get("name", ""),
-            type=data.get("type", ""),
-            parent_token=data.get("parent_token", ""),
-            created_time=datetime.fromtimestamp(data.get("created_time", 0)),
-            modified_time=datetime.fromtimestamp(data.get("modified_time", 0))
+            token=token,
+            name=name,
+            type=file_type,
+            parent_token=parent_token,
+            created_time=_parse_num_ts(created_raw),
+            modified_time=_parse_num_ts(modified_raw),
         )
     
     def is_sheet(self) -> bool:
@@ -103,14 +173,38 @@ class DriveListResponse:
     next_page_token: Optional[str]
     
     @classmethod
-    def from_api_response(cls, data: Dict[str, Any]) -> 'DriveListResponse':
-        """从飞书 API 响应创建实例"""
-        files = []
-        for file_data in data.get("files", []):
-            files.append(FileInfo.from_api_response(file_data))
-        
-        return cls(
-            files=files,
-            has_more=data.get("has_more", False),
-            next_page_token=data.get("next_page_token")
-        )
+    def from_api_response(cls, data: Any) -> 'DriveListResponse':
+        """从飞书 Drive 列表响应对象或字典创建实例。
+
+        兼容 lark-oapi 的 ListFileResponseBody（属性访问）与 dict 结构。
+        顶层也可能包裹在 {"data": {...}}。
+        """
+        # 解包顶层 data
+        payload = data
+        if isinstance(payload, dict) and "data" in payload and isinstance(payload["data"], (dict, object)):
+            payload = payload["data"]
+
+        # 取文件列表
+        files_raw = None
+        if isinstance(payload, dict):
+            files_raw = payload.get("files") or payload.get("items")
+        if files_raw is None:
+            files_raw = getattr(payload, "files", None) or getattr(payload, "items", None)
+        files_raw = files_raw or []
+
+        files: List[FileInfo] = []
+        for item in files_raw:
+            try:
+                files.append(FileInfo.from_api_response(item))
+            except Exception:
+                continue
+
+        # has_more / next_page_token 兼容
+        if isinstance(payload, dict):
+            has_more = bool(payload.get("has_more", False))
+            next_token = payload.get("next_page_token") or payload.get("page_token")
+        else:
+            has_more = bool(getattr(payload, "has_more", False))
+            next_token = getattr(payload, "next_page_token", None) or getattr(payload, "page_token", None)
+
+        return cls(files=files, has_more=has_more or bool(next_token), next_page_token=next_token)

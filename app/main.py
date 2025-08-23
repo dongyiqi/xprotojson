@@ -17,7 +17,3 @@ def read_root():
 @app.on_event("startup")
 def startup() -> None:
 	app.state.feishu = FeishuClient()
-
-
-def get_feishu_client() -> FeishuClient:
-	return app.state.feishu

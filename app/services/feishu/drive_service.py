@@ -46,15 +46,10 @@ class DriveService(BaseService):
         page_token: Optional[str] = None
         page_count = 0
         
-        # 使用 asyncio 在异步上下文中调用同步方法
-        loop = asyncio.get_event_loop()
-        
         while True:
             try:
-                # 在线程池中运行同步方法
-                response_data = await loop.run_in_executor(
-                    None,
-                    self.feishu_client.list_drive_files,
+                # 直接调用 FeishuClient（同步调用）
+                response_data = self.feishu_client.list_drive_files(
                     folder_token,
                     page_size,
                     page_token

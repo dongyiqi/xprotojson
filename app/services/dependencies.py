@@ -94,6 +94,7 @@ def get_structured_service(
 
 
 # 类型别名，方便在端点中使用
+FeishuClientDep = Annotated[FeishuClient, Depends(get_feishu_client)]
 ConfigManagerDep = Annotated[ConfigManager, Depends(get_config_manager)]
 RedisServiceDep = Annotated[RedisService, Depends(get_redis_service)]
 SheetTransformerDep = Annotated[SheetTransformer, Depends(get_transformer)]

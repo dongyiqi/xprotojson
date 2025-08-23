@@ -1,7 +1,7 @@
 from typing import Optional
 
 from fastapi import APIRouter
-from app.dependencies import FeishuClientDep
+from app.services.dependencies import FeishuClientDep
 
 router = APIRouter()
 

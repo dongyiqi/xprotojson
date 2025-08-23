@@ -233,13 +233,13 @@ class StructuredSheetService(BaseService):
         # 从飞书获取
         sheet_files = await self.drive_service.get_sheets_in_folder(folder_token)
         
-        # 转换为字典列表
+        # 转换为字典列表（保持与飞书 API 时间戳一致为数字）
         result = [
             {
                 "token": f.token,
                 "name": f.name,
-                "created_time": f.created_time.isoformat(),
-                "modified_time": f.modified_time.isoformat()
+                "created_time": f.created_time,
+                "modified_time": f.modified_time
             }
             for f in sheet_files
         ]
