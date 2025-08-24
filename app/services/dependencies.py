@@ -10,6 +10,7 @@ from app.services.transform import SheetTransformer
 from app.services.merge import SheetMerger
 from app.clients.feishu import FeishuClient
 from app.services.sheet_sync_service import SheetSyncService
+from app.services.index_builder import IndexBuilder
 
 
 # 全局服务实例
@@ -18,6 +19,7 @@ _redis_service = None
 _transformer = None
 _merger = None
 _sheet_sync_service = None
+_index_builder = None
 
 
 def get_feishu_client(request: Request) -> FeishuClient:
@@ -43,6 +45,14 @@ def get_redis_service() -> RedisService:
     if _redis_service is None:
         _redis_service = RedisService()
     return _redis_service
+
+
+def get_index_builder() -> IndexBuilder:
+    """获取索引构建服务"""
+    global _index_builder
+    if _index_builder is None:
+        _index_builder = IndexBuilder(get_redis_service())
+    return _index_builder
 
 
 def get_transformer() -> SheetTransformer:
@@ -90,6 +100,8 @@ def get_sheet_sync_service(
     return _sheet_sync_service
 
 
+
+
 # 类型别名，方便在端点中使用
 FeishuClientDep = Annotated[FeishuClient, Depends(get_feishu_client)]
 ConfigManagerDep = Annotated[ConfigManager, Depends(get_config_manager)]
@@ -99,3 +111,4 @@ SheetMergerDep = Annotated[SheetMerger, Depends(get_merger)]
 DriveServiceDep = Annotated[DriveService, Depends(get_drive_service)]
 SheetServiceDep = Annotated[SheetService, Depends(get_sheet_service)]
 SheetSyncServiceDep = Annotated[SheetSyncService, Depends(get_sheet_sync_service)]
+IndexBuilderDep = Annotated[IndexBuilder, Depends(get_index_builder)]

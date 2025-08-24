@@ -1,13 +1,14 @@
 """
 数据 API 端点
 """
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from fastapi import APIRouter, HTTPException, Query, Path
 from pydantic import BaseModel
 from app.services.dependencies import (
     ConfigManagerDep,
     RedisServiceDep,
     SheetSyncServiceDep,
+    IndexBuilderDep,
 )
 from app.services.cache import CacheKeys
 
@@ -37,6 +38,16 @@ class SyncResponse(BaseModel):
     details: Optional[Dict[str, Any]] = None
 
 
+class IdListResponse(BaseModel):
+    total: int
+    ids: List[int]
+
+
+class GroupCountResponse(BaseModel):
+    group: str
+    counts: Dict[str, int]
+
+
 
 @router.post("/sheets/{sheet_token}/sync", response_model=SyncResponse, summary="同步指定表格到 Redis")
 async def sync_sheet_to_redis(
@@ -51,3 +62,66 @@ async def sync_sheet_to_redis(
 
 
 # 清理缓存等 StructuredSheetService 相关能力已下线或迁移；保留接口占位时可在此实现新逻辑
+
+
+@router.get("/tables/{table}/ids", response_model=IdListResponse, summary="分页获取表内 ID 列表")
+async def get_table_ids(
+    table: str,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=1000),
+    index: IndexBuilderDep = None,
+):
+    try:
+        total = await index.ids_count(table)
+        ids = await index.ids_range(table, offset, offset + limit - 1)
+        return IdListResponse(total=total, ids=ids)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/tables/{table}/ids/score", response_model=IdListResponse, summary="按 score 范围获取 ID")
+async def get_table_ids_by_score(
+    table: str,
+    min_score: int = Query(0),
+    max_score: int = Query(1 << 62),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=1000),
+    index: IndexBuilderDep = None,
+):
+    try:
+        ids = await index.ids_by_score(table, min_score, max_score, limit=limit, offset=offset)
+        total = await index.ids_count(table)
+        return IdListResponse(total=total, ids=ids)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/tables/{table}/groups/{group}/values/{value}/ids", response_model=IdListResponse, summary="分页获取分组值的 ID")
+async def get_group_ids(
+    table: str,
+    group: str,
+    value: str,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=1000),
+    index: IndexBuilderDep = None,
+):
+    try:
+        ids = await index.group_ids_range(table, group, value, offset, offset + limit - 1)
+        counts = await index.group_counts(table, group)
+        total = counts.get(value, 0)
+        return IdListResponse(total=total, ids=ids)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/tables/{table}/groups/{group}/counts", response_model=GroupCountResponse, summary="获取某分组的计数分布")
+async def get_group_counts(
+    table: str,
+    group: str,
+    index: IndexBuilderDep = None,
+):
+    try:
+        counts = await index.group_counts(table, group)
+        return GroupCountResponse(group=group, counts=counts)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

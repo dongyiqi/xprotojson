@@ -20,6 +20,14 @@ class CacheKeys:
     SHEET_SCHEMA_BY_NAME = "{prefix}:sheet:schema:{sheet_name}"
     SHEET_ROW = "{prefix}:sheet:row:{sheet_token}:{sheet_name}:{row_key}"
     ROW_CFGID = "{prefix}:cfgid:{row_key}"
+    # 新增：表级别元信息、schema 与有序 ID 集
+    TABLE_META = "{prefix}:tablemeta:{table}"
+    TABLE_SCHEMA = "{prefix}:schema:{table}"
+    TABLE_IDS = "{prefix}:ids:{table}"
+    # 分组相关：
+    TABLE_GROUP_IDS = "{prefix}:gids:{table}:{group}:{value}"
+    TABLE_GROUP_COUNT = "{prefix}:gcount:{table}:{group}"
+    TABLE_ROW_GROUP_STATE = "{prefix}:gstate:{table}:{row_id}"
     
     @classmethod
     def structured_key(
@@ -119,6 +127,42 @@ class CacheKeys:
         return cls.SHEET_SCHEMA_BY_NAME.format(
             prefix=cls.PREFIX,
             sheet_name=sheet_name
+        )
+    
+    @classmethod
+    def table_meta_key(cls, table: str) -> str:
+        """表级别元信息键"""
+        return cls.TABLE_META.format(prefix=cls.PREFIX, table=table)
+
+    @classmethod
+    def table_schema_key(cls, table: str) -> str:
+        """表级别 schema 键（简化版 schema 存放处）"""
+        return cls.TABLE_SCHEMA.format(prefix=cls.PREFIX, table=table)
+
+    @classmethod
+    def table_ids_key(cls, table: str) -> str:
+        """表内有序 ID 集合键"""
+        return cls.TABLE_IDS.format(prefix=cls.PREFIX, table=table)
+    
+    @classmethod
+    def table_group_ids_key(cls, table: str, group: str, value: str) -> str:
+        """分组值对应的 ID 有序集合键"""
+        return cls.TABLE_GROUP_IDS.format(
+            prefix=cls.PREFIX, table=table, group=group, value=value
+        )
+
+    @classmethod
+    def table_group_count_key(cls, table: str, group: str) -> str:
+        """分组计数哈希键（field=value, value=count）"""
+        return cls.TABLE_GROUP_COUNT.format(
+            prefix=cls.PREFIX, table=table, group=group
+        )
+
+    @classmethod
+    def table_row_group_state_key(cls, table: str, row_id: str | int) -> str:
+        """单行的分组状态哈希键（field=group, value=group_value）"""
+        return cls.TABLE_ROW_GROUP_STATE.format(
+            prefix=cls.PREFIX, table=table, row_id=row_id
         )
     
     @staticmethod
