@@ -9,6 +9,7 @@ from app.services.base import BaseService
 from app.services.feishu import SheetService
 from app.services.cache import RedisService, CacheKeys
 from app.services.transform import SheetTransformer, SheetSchema
+from app.services.transform.schema import SheetSchemaBuilder
 from app.core.config import settings
 
 
@@ -62,10 +63,13 @@ class SheetSyncService(BaseService):
                 spreadsheet_token=spreadsheet_token,
                 range_str=a1_range_by_id,
             )
-            values: List[List[Any]] = raw.get("valueRange", {}).get("values", [])
+            values_raw: List[List[Any]] = raw.get("valueRange", {}).get("values", [])
 
-            # 3) 构建/推断 Schema（前四行）
-            schema = self._infer_schema_from_top_rows(values)
+            # 3) 通过 SchemaBuilder 生成 schema 与列投影
+            builder = SheetSchemaBuilder(settings.table)
+            schema, kept_indices = builder.infer(values_raw)
+            # 将原始二维数组按 kept_indices 投影
+            values = self._project_columns(values_raw, kept_indices)
 
             # 4) 解析行并批量写入 Redis
             row_count, written_keys = await self._write_rows_to_redis(
@@ -135,6 +139,14 @@ class SheetSyncService(BaseService):
             await pipe.execute()
 
         return written, keys_sample
+
+    def _project_columns(self, values: List[List[Any]], kept_indices: List[int]) -> List[List[Any]]:
+        if not values or not kept_indices:
+            return values
+        projected: List[List[Any]] = []
+        for row in values:
+            projected.append([row[i] if i < len(row) else None for i in kept_indices])
+        return projected
 
     async def _write_schema_and_meta(
         self,
@@ -264,127 +276,6 @@ class SheetSyncService(BaseService):
                 continue
         return 0
 
-    def _infer_schema_from_top_rows(self, values: List[List[Any]]) -> SheetSchema:
-        """基于配置行索引推断 Schema：
-        - header 使用 settings.table.header_name_row（默认第 2 行）
-        - 类型使用 settings.table.type_row（默认第 3 行）
-        - 备注使用 settings.table.comment_row（默认第 4 行，不参与解析，仅预留）
-        - 数据开始行使用 settings.table.data_start_row（默认第 5 行，0-based）
-        - 主键列优先匹配 settings.table.default_key_column（默认 ID），否则第一列
-        """
-        cfg = settings.table
-        header_row = cfg.header_name_row + 1  # storage uses 1-based for transformer
-        data_start_row = cfg.data_start_row + 1
-
-        headers: List[str] = []
-        if values and len(values) > cfg.header_name_row:
-            raw_headers = values[cfg.header_name_row]
-            headers = []
-            for cell in raw_headers:
-                if self.transformer._is_empty_value(cell):
-                    headers.append(f"Column{len(headers) + 1}")
-                else:
-                    import re
-                    header = str(cell).strip()
-                    header = re.sub(r'[^\w\u4e00-\u9fa5]', '_', header)
-                    headers.append(header)
-
-        # 采样行（类型行优先，其它行作为补充）
-        samples: List[List[Any]] = []
-        if len(values) > cfg.type_row:
-            samples.append(values[cfg.type_row])
-        for r in range(cfg.header_name_row + 1, min(len(values), cfg.comment_row + 1)):
-            if r != cfg.type_row and r < len(values):
-                samples.append(values[r])
-
-        # 推断类型
-        type_mapping: Dict[str, str] = {}
-        array_columns: List[str] = []
-        json_columns: List[str] = []
-
-        for col_idx, header in enumerate(headers):
-            inferred_type = self._infer_column_type([row[col_idx] if col_idx < len(row) else None for row in samples])
-            type_mapping[header] = inferred_type
-            if inferred_type == "array":
-                array_columns.append(header)
-            elif inferred_type == "json":
-                json_columns.append(header)
-
-        # 主键列
-        key_column = cfg.default_key_column or "ID"
-        if headers:
-            lower_headers = [h.lower() for h in headers]
-            dk = (cfg.default_key_column or "ID").lower()
-            if dk in lower_headers:
-                key_column = headers[lower_headers.index(dk)]
-            else:
-                key_column = headers[0]
-
-        # 如果数据总行数不足，保证 data_start_row 至少大于 header_row
-        if len(values) <= cfg.data_start_row:
-            data_start_row = max(header_row + 1, len(values))
-
-        return SheetSchema(
-            key_column=key_column,
-            headers=headers,
-            header_row=header_row,
-            data_start_row=data_start_row,
-            type_mapping=type_mapping,
-            array_columns=array_columns,
-            json_columns=json_columns,
-        )
-
-    def _infer_column_type(self, samples: List[Any]) -> str:
-        """根据样本值推断列类型。"""
-        has_json = False
-        has_array = False
-        has_bool = False
-        has_int = False
-        has_float = False
-
-        for v in samples:
-            if v is None or (isinstance(v, str) and v.strip() == ""):
-                continue
-            s = str(v).strip()
-            if s.startswith("{") and s.endswith("}"):
-                has_json = True
-                continue
-            if s.startswith("[") and s.endswith("]"):
-                has_array = True
-                continue
-            if "," in s or ";" in s:
-                has_array = True
-            lv = s.lower()
-            if lv in ("true", "false", "1", "0", "yes", "no", "是", "否"):
-                has_bool = True
-                continue
-            try:
-                iv = int(float(s))
-                fv = float(s)
-                if float(iv) == fv:
-                    has_int = True
-                else:
-                    has_float = True
-                continue
-            except Exception:
-                try:
-                    float(s)
-                    has_float = True
-                    continue
-                except Exception:
-                    pass
-
-        if has_json:
-            return "json"
-        if has_array:
-            return "array"
-        if has_bool:
-            return "bool"
-        if has_int:
-            return "int"
-        if has_float:
-            return "float"
-        return "str"
 
     def _col_number_to_letters(self, col_number: int) -> str:
         """1 -> A, 26 -> Z, 27 -> AA ..."""

@@ -8,7 +8,6 @@ from app.services.feishu import DriveService, SheetService
 from app.services.cache import RedisService
 from app.services.transform import SheetTransformer
 from app.services.merge import SheetMerger
-from app.services.structured_service import StructuredSheetService
 from app.clients.feishu import FeishuClient
 from app.services.sheet_sync_service import SheetSyncService
 
@@ -18,7 +17,6 @@ _config_manager = None
 _redis_service = None
 _transformer = None
 _merger = None
-_structured_service = None
 _sheet_sync_service = None
 
 
@@ -73,26 +71,7 @@ def get_sheet_service(feishu_client: Annotated[FeishuClient, Depends(get_feishu_
     return SheetService(feishu_client)
 
 
-def get_structured_service(
-    sheet_service: Annotated[SheetService, Depends(get_sheet_service)],
-    redis_service: Annotated[RedisService, Depends(get_redis_service)],
-    transformer: Annotated[SheetTransformer, Depends(get_transformer)],
-    merger: Annotated[SheetMerger, Depends(get_merger)],
-    config_manager: Annotated[ConfigManager, Depends(get_config_manager)],
-    drive_service: Annotated[DriveService, Depends(get_drive_service)]
-) -> StructuredSheetService:
-    """获取结构化数据服务"""
-    global _structured_service
-    if _structured_service is None:
-        _structured_service = StructuredSheetService(
-            sheet_service=sheet_service,
-            redis_service=redis_service,
-            transformer=transformer,
-            merger=merger,
-            config_manager=config_manager,
-            drive_service=drive_service
-        )
-    return _structured_service
+# 结构化服务已下线：相关依赖与路由已移除
 
 
 def get_sheet_sync_service(
@@ -119,5 +98,4 @@ SheetTransformerDep = Annotated[SheetTransformer, Depends(get_transformer)]
 SheetMergerDep = Annotated[SheetMerger, Depends(get_merger)]
 DriveServiceDep = Annotated[DriveService, Depends(get_drive_service)]
 SheetServiceDep = Annotated[SheetService, Depends(get_sheet_service)]
-StructuredServiceDep = Annotated[StructuredSheetService, Depends(get_structured_service)]
 SheetSyncServiceDep = Annotated[SheetSyncService, Depends(get_sheet_sync_service)]
