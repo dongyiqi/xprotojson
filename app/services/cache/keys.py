@@ -26,6 +26,8 @@ class CacheKeys:
     TABLE_IDS = "{prefix}:ids:{table}"
     # 分组相关：
     TABLE_GROUP_IDS = "{prefix}:gids:{table}:{group}:{value}"
+    # 仅按表级组名（无字段名）的 ID 集：xpj:gids:{table}:{group}
+    TABLE_TGROUP_IDS = "{prefix}:gids:{table}:{group}"
     TABLE_GROUP_COUNT = "{prefix}:gcount:{table}:{group}"
     TABLE_ROW_GROUP_STATE = "{prefix}:gstate:{table}:{row_id}"
     
@@ -163,6 +165,13 @@ class CacheKeys:
         """单行的分组状态哈希键（field=group, value=group_value）"""
         return cls.TABLE_ROW_GROUP_STATE.format(
             prefix=cls.PREFIX, table=table, row_id=row_id
+        )
+
+    @classmethod
+    def table_tgroup_ids_key(cls, table: str, group_value: str) -> str:
+        """表级组名对应的 ID 集合键（不含字段名维度）。"""
+        return cls.TABLE_TGROUP_IDS.format(
+            prefix=cls.PREFIX, table=table, group=group_value
         )
     
     @staticmethod

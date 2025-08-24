@@ -29,7 +29,7 @@ class IndexBuilder(BaseService):
         row_id: int | str,
         row_data: Dict[str, Any],
         group_fields: Optional[List[str]] = None,
-        group_assignments: Optional[Dict[str, Optional[str]]] = None,
+        table_group: Optional[str] = None,
     ) -> None:
         """
         写入或更新单行，并维护：
@@ -55,11 +55,6 @@ class IndexBuilder(BaseService):
 
         # 组字段默认仅处理 Subtype
         gfields = list(group_fields or ["Subtype"])
-        # 如果外部指定了额外的分组（如 tgroup），合并到待处理字段
-        if group_assignments:
-            for k in group_assignments.keys():
-                if k not in gfields:
-                    gfields.append(k)
         gstate_key = CacheKeys.table_row_group_state_key(table, rid)
 
         # 读取旧状态
@@ -79,29 +74,45 @@ class IndexBuilder(BaseService):
 
             # 处理分组变更
             for gf in gfields:
-                # 优先使用外部指定的分组值（例如 tgroup），否则回退到行内字段
-                if group_assignments and gf in group_assignments:
-                    new_val_raw = group_assignments.get(gf)
-                else:
-                    new_val_raw = row_payload.get(gf)
+                # 从行内字段获取分组值
+                new_val_raw = row_payload.get(gf)
                 new_val = None if new_val_raw is None or str(new_val_raw).strip() == "" else str(new_val_raw)
                 old_val = old_states.get(gf)
-                # 如有变化，迁移 ZSET & 更新计数
+                
+                self.log_debug(f"处理分组 {gf}: table={table}, rid={rid}, old_val={old_val}, new_val={new_val}")
+                
+                # 如果旧值存在且与新值不同，从旧分组中移除
                 if old_val and old_val != new_val:
                     old_gid_key = CacheKeys.table_group_ids_key(table, gf, old_val)
                     gcount_key = CacheKeys.table_group_count_key(table, gf)
                     await pipe.zrem(old_gid_key, str(rid))
                     await pipe.hincrby(gcount_key, old_val, -1)
+                    self.log_debug(f"从旧分组移除: {old_gid_key}")
+                
+                # 如果新值存在且与旧值不同，加入新分组
                 if new_val and new_val != old_val:
                     new_gid_key = CacheKeys.table_group_ids_key(table, gf, new_val)
                     gcount_key = CacheKeys.table_group_count_key(table, gf)
                     await pipe.zadd(new_gid_key, {str(rid): float(rid)})
                     await pipe.hincrby(gcount_key, new_val, 1)
+                    self.log_debug(f"加入新分组: {new_gid_key}")
+                
                 # 更新 gstate
                 if new_val is None:
                     await pipe.hdel(gstate_key, gf)
                 else:
                     await pipe.hset(gstate_key, gf, new_val)
+
+            # 处理表级分组（table_group），默认为 default
+            tg_new = (table_group or "").strip() or "default"
+            tg_state_field = "__tgroup__"
+            tg_old = old_states.get(tg_state_field)
+            if tg_old and tg_old != tg_new:
+                await pipe.zrem(CacheKeys.table_tgroup_ids_key(table, tg_old), str(rid))
+            if tg_new and tg_new != tg_old:
+                await pipe.zadd(CacheKeys.table_tgroup_ids_key(table, tg_new), {str(rid): float(rid)})
+            # 将表级组名也记录在 gstate（避免重复迁移）
+            await pipe.hset(gstate_key, tg_state_field, tg_new)
 
             await pipe.execute()
 

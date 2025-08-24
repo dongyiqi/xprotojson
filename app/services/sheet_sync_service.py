@@ -150,7 +150,8 @@ class SheetSyncService(BaseService):
                 table=table,
                 row_id=row_key,
                 row_data=row_data,
-                group_assignments={"tgroup": table_group},
+                group_fields=["Subtype"],
+                table_group=table_group or "default",
             )
             redis_key = CacheKeys.row_cfgid_key(str(row_key))
             written += 1
