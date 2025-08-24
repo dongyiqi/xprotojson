@@ -3,7 +3,7 @@
 """
 from typing import Annotated
 from fastapi import Depends, Request
-from app.services.config_manager import ConfigManager
+
 from app.services.feishu import DriveService, SheetService
 from app.services.cache import RedisService
 from app.services.transform import SheetTransformer
@@ -14,7 +14,6 @@ from app.services.index_builder import IndexBuilder
 
 
 # 全局服务实例
-_config_manager = None
 _redis_service = None
 _transformer = None
 _merger = None
@@ -27,16 +26,7 @@ def get_feishu_client(request: Request) -> FeishuClient:
     return request.app.state.feishu
 
 
-def get_config_manager() -> ConfigManager:
-    """获取配置管理器"""
-    global _config_manager
-    if _config_manager is None:
-        _config_manager = ConfigManager()
-        # 初始化默认配置
-        _config_manager.initialize_default_configs()
-        # 尝试加载配置文件
-        _config_manager.load_from_file("config/sheet_configs.json")
-    return _config_manager
+
 
 
 def get_redis_service() -> RedisService:
@@ -104,7 +94,7 @@ def get_sheet_sync_service(
 
 # 类型别名，方便在端点中使用
 FeishuClientDep = Annotated[FeishuClient, Depends(get_feishu_client)]
-ConfigManagerDep = Annotated[ConfigManager, Depends(get_config_manager)]
+
 RedisServiceDep = Annotated[RedisService, Depends(get_redis_service)]
 SheetTransformerDep = Annotated[SheetTransformer, Depends(get_transformer)]
 SheetMergerDep = Annotated[SheetMerger, Depends(get_merger)]

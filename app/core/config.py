@@ -106,8 +106,18 @@ class TableConfig(BaseModel):
 		return v
 
 
-class Settings(BaseSettings):
+class FolderSettings(BaseModel):
+	"""文件夹配置。支持环境变量：
+	- XPJ_FOLDERS__DEFAULT
+	- XPJ_FOLDERS__CONFIG
+	- XPJ_FOLDERS__TEST
+	"""
+	default: str = Field(default="fldcnVaJ6ltyVOJOHXtl6Ug6nOc", description="默认文件夹 token")
+	config: str = Field(default="fldcnVaJ6ltyVOJOHXtl6Ug6nOc", description="配置文件夹 token")
+	test: str = Field(default="fldcnVaJ6ltyVOJOHXtl6Ug6nOc", description="测试文件夹 token")
 
+
+class Settings(BaseSettings):
 
 	app_name: str = "XProtoJSON API"
 	debug: bool = True
@@ -119,6 +129,7 @@ class Settings(BaseSettings):
 	feishu: FeishuSettings = Field(default_factory=FeishuSettings)
 	redis: RedisSettings = Field(default_factory=RedisSettings)
 	table: TableConfig = Field(default_factory=TableConfig)
+	folders: FolderSettings = Field(default_factory=FolderSettings)
 
 	model_config = SettingsConfigDict(
 		env_prefix="XPJ_",

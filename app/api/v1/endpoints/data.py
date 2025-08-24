@@ -5,12 +5,13 @@ from typing import Dict, Any, Optional, List
 from fastapi import APIRouter, HTTPException, Query, Path
 from pydantic import BaseModel
 from app.services.dependencies import (
-    ConfigManagerDep,
     RedisServiceDep,
     SheetSyncServiceDep,
     IndexBuilderDep,
+    DriveServiceDep,
 )
 from app.services.cache import CacheKeys
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -48,6 +49,24 @@ class GroupCountResponse(BaseModel):
     counts: Dict[str, int]
 
 
+class FolderSyncResponse(BaseModel):
+    """文件夹同步响应"""
+    success: bool
+    message: str = ""
+    folder_token: str
+    total_sheets: int
+    synced_sheets: int
+    failed_sheets: int
+    details: List[Dict[str, Any]] = []
+
+
+class FolderListResponse(BaseModel):
+    """文件夹内容响应"""
+    folder_token: str
+    total_sheets: int
+    sheets: List[Dict[str, Any]] = []
+
+
 
 @router.post("/sheets/{sheet_token}/sync", response_model=SyncResponse, summary="同步指定表格到 Redis")
 async def sync_sheet_to_redis(
@@ -61,67 +80,70 @@ async def sync_sheet_to_redis(
         raise HTTPException(status_code=500, detail=f"同步失败: {str(e)}")
 
 
-# 清理缓存等 StructuredSheetService 相关能力已下线或迁移；保留接口占位时可在此实现新逻辑
-
-
-@router.get("/tables/{table}/ids", response_model=IdListResponse, summary="分页获取表内 ID 列表")
-async def get_table_ids(
-    table: str,
-    offset: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=1000),
-    index: IndexBuilderDep = None,
-):
+@router.post("/folders/{folder_token}/sync", response_model=FolderSyncResponse, summary="同步指定文件夹下的所有表格")
+async def sync_folder_sheets(
+    folder_token: str = Path(..., description="飞书文件夹 token"),
+    drive_service: DriveServiceDep = None,
+    sync_service: SheetSyncServiceDep = None,
+) -> FolderSyncResponse:
+    """同步指定文件夹下的所有 spreadsheet 到 Redis"""
     try:
-        total = await index.ids_count(table)
-        ids = await index.ids_range(table, offset, offset + limit - 1)
-        return IdListResponse(total=total, ids=ids)
+        
+        # 获取文件夹下的所有表格文件
+        sheet_files = await drive_service.get_sheets_in_folder(folder_token)
+        
+        total_sheets = len(sheet_files)
+        synced_sheets = 0
+        failed_sheets = 0
+        details = []
+        
+        # 逐个同步表格
+        for sheet_file in sheet_files:
+            try:
+                # 使用文件 token 作为 spreadsheet token 进行同步
+                result = await sync_service.sync_sheet(sheet_file.token)
+                synced_sheets += 1
+                details.append({
+                    "file_name": sheet_file.name,
+                    "file_token": sheet_file.token,
+                    "status": "success",
+                    "rows_written": result.get("total_rows_written", 0),
+                    "sheets_count": len(result.get("sheets", []))
+                })
+            except Exception as e:
+                failed_sheets += 1
+                details.append({
+                    "file_name": sheet_file.name,
+                    "file_token": sheet_file.token,
+                    "status": "failed",
+                    "error": str(e)
+                })
+        
+        success = failed_sheets == 0
+        message = f"同步完成: {synced_sheets}/{total_sheets} 成功"
+        if failed_sheets > 0:
+            message += f", {failed_sheets} 失败"
+        
+        return FolderSyncResponse(
+            success=success,
+            message=message,
+            folder_token=folder_token,
+            total_sheets=total_sheets,
+            synced_sheets=synced_sheets,
+            failed_sheets=failed_sheets,
+            details=details
+        )
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"文件夹同步失败: {str(e)}")
 
 
-@router.get("/tables/{table}/ids/score", response_model=IdListResponse, summary="按 score 范围获取 ID")
-async def get_table_ids_by_score(
-    table: str,
-    min_score: int = Query(0),
-    max_score: int = Query(1 << 62),
-    offset: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=1000),
-    index: IndexBuilderDep = None,
-):
-    try:
-        ids = await index.ids_by_score(table, min_score, max_score, limit=limit, offset=offset)
-        total = await index.ids_count(table)
-        return IdListResponse(total=total, ids=ids)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/tables/{table}/groups/{group}/values/{value}/ids", response_model=IdListResponse, summary="分页获取分组值的 ID")
-async def get_group_ids(
-    table: str,
-    group: str,
-    value: str,
-    offset: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=1000),
-    index: IndexBuilderDep = None,
-):
-    try:
-        ids = await index.group_ids_range(table, group, value, offset, offset + limit - 1)
-        counts = await index.group_counts(table, group)
-        total = counts.get(value, 0)
-        return IdListResponse(total=total, ids=ids)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/tables/{table}/groups/{group}/counts", response_model=GroupCountResponse, summary="获取某分组的计数分布")
-async def get_group_counts(
-    table: str,
-    group: str,
-    index: IndexBuilderDep = None,
-):
-    try:
-        counts = await index.group_counts(table, group)
-        return GroupCountResponse(group=group, counts=counts)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+@router.post("/folders/sync", response_model=FolderSyncResponse, summary="同步默认文件夹下的所有表格")
+async def sync_default_folder_sheets(
+    drive_service: DriveServiceDep = None,
+    sync_service: SheetSyncServiceDep = None,
+) -> FolderSyncResponse:
+    """同步默认文件夹下的所有 spreadsheet 到 Redis"""
+    return await sync_folder_sheets(settings.folders.default, drive_service, sync_service)
