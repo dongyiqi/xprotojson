@@ -64,35 +64,11 @@ class ConfigManager(BaseService):
                 self.register_config(config)
         return config
     
-    def get_config_required(self, sheet_name: str) -> SheetConfig:
-        """获取配置，不存在则抛出异常"""
-        config = self.get_config(sheet_name)
-        if not config:
-            raise ConfigNotFoundError(
-                f"未找到 {sheet_name} 的配置",
-                code="CONFIG_NOT_FOUND",
-                details={"sheet_name": sheet_name}
-            )
-        return config
+
     
-    def get_group_configs(self, group_name: str) -> List[SheetConfig]:
-        """获取指定组的所有配置"""
-        return [
-            config for config in self.configs.values()
-            if config.group_name == group_name
-        ]
+
     
-    def list_all_sheets(self) -> List[str]:
-        """列出所有已配置的 Sheet"""
-        return list(self.configs.keys())
-    
-    def list_all_groups(self) -> List[str]:
-        """列出所有的组"""
-        groups = set()
-        for config in self.configs.values():
-            if config.group_name:
-                groups.add(config.group_name)
-        return list(groups)
+
     
     def _create_default_config(self, sheet_name: str) -> Optional[SheetConfig]:
         """创建默认配置"""

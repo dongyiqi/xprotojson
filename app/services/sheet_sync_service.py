@@ -208,26 +208,7 @@ class SheetSyncService(BaseService):
         }
         await self.redis.set(schema_key, schema_dict)
 
-    # 为兼容旧命名，提供 _write_schema_only 的别名
-    _write_schema_only = _write_schema
 
-    async def _write_schema_by_name(
-        self,
-        sheet_name: str,
-        schema: SheetSchema,
-    ) -> None:
-        # 旧实现：按名称写入 sheet 级 schema。保留方法以兼容，但不再使用。
-        schema_key = CacheKeys.sheet_schema_by_name_key(sheet_name)
-        schema_dict = {
-            "key_column": schema.key_column,
-            "headers": schema.headers,
-            "header_row": schema.header_row,
-            "data_start_row": schema.data_start_row,
-            "type_mapping": schema.type_mapping,
-            "array_columns": schema.array_columns,
-            "json_columns": schema.json_columns,
-        }
-        await self.redis.set(schema_key, schema_dict)
 
     async def _write_table_meta(
         self,
@@ -318,72 +299,7 @@ class SheetSyncService(BaseService):
         }
         await self.redis.set(CacheKeys.table_meta_key(table), meta)
 
-    async def _write_container_meta(
-        self,
-        spreadsheet_token: str,
-        sheets: List[Dict[str, Any]],
-        total_rows: int,
-    ) -> None:
-        meta_key = CacheKeys.sheet_meta_key(spreadsheet_token)
 
-        # 获取文件级别的创建/修改时间（数字时间戳）与名称
-        created_ts = 0
-        modified_ts = 0
-        workbook_name = ""
-        try:
-            resp = await self._call_drive_get_file(spreadsheet_token)
-            # 兼容属性/字典
-            payload = resp
-            if isinstance(resp, dict) and "data" in resp:
-                payload = resp["data"]
-            created_ts = self._extract_num_ts(payload, ["created_time", "create_time"]) or 0
-            modified_ts = self._extract_num_ts(payload, ["modified_time", "update_time", "edited_time"]) or 0
-            # 名称字段
-            if isinstance(payload, dict):
-                workbook_name = payload.get("name") or ""
-            else:
-                workbook_name = getattr(payload, "name", "") or ""
-        except Exception:
-            pass
-
-        meta = {
-            "generated_at": datetime.now().isoformat(),
-            "revision": 0,
-            "sheets": sheets,
-            "total_rows": total_rows,
-            "created_time": created_ts,
-            "modified_time": modified_ts,
-            "workbook_name": workbook_name,
-        }
-        await self.redis.set(meta_key, meta)
-
-    async def _call_drive_get_file(self, file_token: str):
-        # 参考 _call_list_sheets 的风格，使用底层 client
-        loop = None
-        try:
-            import asyncio
-            loop = asyncio.get_event_loop()
-        except Exception:
-            loop = None
-        if loop and loop.is_running():
-            return await loop.run_in_executor(None, self.sheet_service.feishu_client.get_drive_file, file_token)
-        else:
-            return self.sheet_service.feishu_client.get_drive_file(file_token)
-
-    def _extract_num_ts(self, obj: Any, keys: List[str]) -> int:
-        def _g(o: Any, k: str):
-            if isinstance(o, dict):
-                return o.get(k)
-            return getattr(o, k, None)
-        for k in keys:
-            v = _g(obj, k)
-            if v is None:
-                continue
-            try:
-                return int(float(str(v)))
-            except Exception:
-                continue
-        return 0
 
 
     def _col_number_to_letters(self, col_number: int) -> str:

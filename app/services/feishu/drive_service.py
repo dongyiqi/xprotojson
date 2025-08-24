@@ -104,22 +104,7 @@ class DriveService(BaseService):
         self.log_info(f"找到 {len(sheet_files)} 个表格文件")
         return sheet_files
     
-    async def get_file_info(
-        self,
-        file_token: str
-    ) -> FileInfo:
-        """
-        获取单个文件信息
-        
-        Args:
-            file_token: 文件 token
-            
-        Returns:
-            文件信息
-        """
-        # 注意：飞书可能没有直接的单文件信息 API
-        # 这里作为占位，实际可能需要通过其他方式实现
-        raise NotImplementedError("获取单个文件信息暂未实现")
+
     
     def _parse_drive_response(self, data: Dict[str, Any]) -> DriveListResponse:
         """解析 Drive API 响应"""
