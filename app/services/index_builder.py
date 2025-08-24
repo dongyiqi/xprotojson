@@ -46,7 +46,7 @@ class IndexBuilder(BaseService):
             self.log_warning(f"忽略无效ID，无法转换为 int: table={table}, row_id={row_id}")
             return
         client = await self.redis._ensure_connected()
-        # 注入 _table 字段
+        # 注入 _table 与 group 字段（group 用于溯源表级分组）
         row_payload: Dict[str, Any] = dict(row_data)
         row_payload.setdefault("_table", table)
         # 同步行 JSON
@@ -66,6 +66,11 @@ class IndexBuilder(BaseService):
                     old_states[gf] = vals[idx]
         except Exception:
             old_states = {}
+
+        # 表级分组（table_group），默认为 default
+        tg_new = (table_group or "").strip() or "default"
+        # 将表级组名写入行数据（便于溯源）
+        row_payload["_group"] = tg_new
 
         async with client.pipeline() as pipe:
             # 写行 & ids 索引
@@ -103,8 +108,7 @@ class IndexBuilder(BaseService):
                 else:
                     await pipe.hset(gstate_key, gf, new_val)
 
-            # 处理表级分组（table_group），默认为 default
-            tg_new = (table_group or "").strip() or "default"
+            # 处理表级分组（table_group）
             tg_state_field = "__tgroup__"
             tg_old = old_states.get(tg_state_field)
             if tg_old and tg_old != tg_new:

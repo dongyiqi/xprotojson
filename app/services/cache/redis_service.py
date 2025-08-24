@@ -80,6 +80,48 @@ class RedisService(BaseService):
                 code="CACHE_GET_ERROR",
                 details={"key": key}
             )
+
+    async def mget(self, keys: list[str]) -> list[Optional[Any]]:
+        """
+        批量获取多个键的值
+        
+        Args:
+            keys: 键列表
+            
+        Returns:
+            值列表，不存在的键对应 None
+        """
+        if not keys:
+            return []
+            
+        try:
+            client = await self._ensure_connected()
+            results = await client.mget(keys)
+            
+            # 反序列化结果
+            deserialized_results = []
+            for i, data in enumerate(results):
+                if data is None:
+                    deserialized_results.append(None)
+                else:
+                    try:
+                        deserialized_results.append(self._deserialize(data))
+                    except json.JSONDecodeError as e:
+                        self.log_error(f"批量获取时数据解析失败: {keys[i]}", error=e)
+                        # 删除损坏的缓存
+                        await self.delete(keys[i])
+                        deserialized_results.append(None)
+            
+            self.log_debug(f"批量获取缓存: {len(keys)} 个键")
+            return deserialized_results
+            
+        except Exception as e:
+            self.log_error(f"批量获取缓存失败", error=e)
+            raise CacheError(
+                f"批量获取缓存失败: {str(e)}",
+                code="CACHE_MGET_ERROR",
+                details={"keys": keys}
+            )
     
     async def set(
         self,

@@ -113,10 +113,15 @@ The project maintains two parallel structures:
 
 ## API Endpoints
 
-### Data Sync and Query
+### Data Sync
 - `POST /api/v1/data/sheets/{sheet_token}/sync` - Sync specific sheet to Redis
 - `POST /api/v1/data/folders/{folder_token}/sync` - Sync all sheets in folder
 - `POST /api/v1/data/folders/sync` - Sync default folder sheets
+
+### Data Query
+- `GET /api/v1/data/by-id?id={id}` - Query single data by ID from cfgid key
+- `GET /api/v1/data/by-ids?ids={id1,id2,id3}` - Batch query multiple data by IDs
+- `GET /api/v1/data/by-table?table={table}&offset={offset}&limit={limit}` - Query all data in table with pagination
 
 ### Health and Status  
 - `GET /api/v1/health` - Service health check
